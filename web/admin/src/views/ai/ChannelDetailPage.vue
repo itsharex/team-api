@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, h, nextTick, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, onMounted, h, nextTick, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Tag, Button, Popconfirm, Message, RadioGroup, Radio, InputNumber, Input, Switch, DatePicker } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import request from '@/utils/request'
+import ChannelModelTestModal from '@/components/ChannelModelTestModal.vue'
 import { providerTypeOptions, filterProviderOption } from '@/constants/channel'
 import * as echarts from 'echarts'
 
@@ -73,12 +74,8 @@ const editForm = reactive({
   test_model: '',
   remark: '',
   status: 'active',
-  is_vip: false,
   use_proxy: false,
   web_search_to_google_search: false,
-  sharing_threshold: null as number | null,
-  preemption_threshold: null as number | null,
-  borrowing_cooldown_seconds: null as number | null,
 })
 
 function openEditModal() {
@@ -95,12 +92,8 @@ function openEditModal() {
     test_model: detail.value.test_model || '',
     remark: detail.value.remark || '',
     status: detail.value.status || 'active',
-    is_vip: detail.value.is_vip || false,
     use_proxy: detail.value.use_proxy || false,
     web_search_to_google_search: detail.value.web_search_to_google_search || false,
-    sharing_threshold: detail.value.sharing_threshold ?? null,
-    preemption_threshold: detail.value.preemption_threshold ?? null,
-    borrowing_cooldown_seconds: detail.value.borrowing_cooldown_seconds ?? null,
   })
   showEditModal.value = true
 }
@@ -222,9 +215,14 @@ const abilityColumns: TableColumnData[] = [
 
   // 操作列（固定在最右侧）
   {
-    title: '操作', dataIndex: 'actions', width: 150, fixed: 'right',
+    title: '操作', dataIndex: 'actions', width: 210, fixed: 'right',
     render({ record }) {
       return h('div', { style: 'display: flex; gap: 8px' }, [
+        h(Button, {
+          size: 'mini',
+          type: 'outline',
+          onClick: () => openModelTest(record.model_name),
+        }, () => '测试'),
         h(Button, {
           size: 'mini',
           onClick: () => handleResetModelHealth(record),
@@ -237,6 +235,20 @@ const abilityColumns: TableColumnData[] = [
     },
   },
 ]
+
+// === 模型能力行快捷测试（共用 ChannelModelTestModal，打开即自动测试该模型） ===
+const showModelTestModal = ref(false)
+const autoTestModel = ref<string | null>(null)
+
+function openModelTest(modelName: string) {
+  autoTestModel.value = modelName
+  showModelTestModal.value = true
+}
+
+// 关闭弹窗时清除自动测试目标，避免下次打开误触发
+watch(showModelTestModal, (v) => {
+  if (!v) autoTestModel.value = null
+})
 
 async function fetchAbilities() {
   abilitiesLoading.value = true
@@ -1098,10 +1110,6 @@ function formatHeaders(headers: Record<string, string>): string {
                   </template>
                   <span v-else style="color: #94a3b8">—</span>
                 </ADescriptionsItem>
-                <ADescriptionsItem label="VIP">
-                  <ATag v-if="detail.is_vip" color="gold" size="small">VIP</ATag>
-                  <span v-else>-</span>
-                </ADescriptionsItem>
                 <ADescriptionsItem label="代理">
                   <ATag v-if="detail.use_proxy" color="arcoblue" size="small">已启用</ATag>
                   <span v-else>-</span>
@@ -1538,27 +1546,6 @@ function formatHeaders(headers: Record<string, string>): string {
         </ARow>
 
         <AFormItem label="备注"><AInput v-model="editForm.remark" type="textarea" :auto-size="{ minRows: 2, maxRows: 4 }" /></AFormItem>
-
-        <ACollapse :bordered="false">
-          <ACollapseItem header="VIP 设置" key="vip" :header-style="{ fontSize: '13px' }">
-            <ARow :gutter="16">
-              <ACol :span="12">
-                <AFormItem label="VIP 渠道"><ASwitch v-model="editForm.is_vip" /></AFormItem>
-              </ACol>
-              <ACol v-if="editForm.is_vip" :span="12">
-                <AFormItem label="共享阈值"><AInputNumber v-model="editForm.sharing_threshold" :min="0" :max="100" class="w-full" /></AFormItem>
-              </ACol>
-            </ARow>
-            <ARow v-if="editForm.is_vip" :gutter="16">
-              <ACol :span="12">
-                <AFormItem label="抢占阈值"><AInputNumber v-model="editForm.preemption_threshold" :min="0" :max="100" class="w-full" /></AFormItem>
-              </ACol>
-              <ACol :span="12">
-                <AFormItem label="借用冷却(秒)"><AInputNumber v-model="editForm.borrowing_cooldown_seconds" :min="0" class="w-full" /></AFormItem>
-              </ACol>
-            </ARow>
-          </ACollapseItem>
-        </ACollapse>
       </AForm>
     </AModal>
 
@@ -1604,6 +1591,14 @@ function formatHeaders(headers: Record<string, string>): string {
         </AFormItem>
       </AForm>
     </AModal>
+
+    <!-- 模型能力行快捷测试弹窗（行「测试」按钮入口，打开即自动测试对应模型） -->
+    <ChannelModelTestModal
+      v-model:visible="showModelTestModal"
+      :channel-id="channelId"
+      :channel-name="detail?.name"
+      :auto-test-model="autoTestModel"
+    />
 
     <!-- Debug Log Detail Drawer -->
     <ADrawer v-model:visible="showDebugDetail" title="调试日志详情" :width="880" unmount-on-close>

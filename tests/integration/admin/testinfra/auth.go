@@ -23,10 +23,11 @@ func getRedisClient() *redis.Client {
 }
 
 type LoginResult struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresAt    string `json:"expires_at"`
-	TotpRequired bool   `json:"totp_required"`
+	AccessToken      string `json:"access_token"`
+	RefreshToken     string `json:"refresh_token"`
+	ExpiresAt        string `json:"expires_at"`
+	TotpRequired     bool   `json:"totp_required"`
+	ProvisionalToken string `json:"provisional_token"`
 }
 
 func Authenticate(t *testing.T) *LoginResult {
@@ -38,6 +39,17 @@ func Authenticate(t *testing.T) *LoginResult {
 }
 
 func AuthenticateWithCreds(t *testing.T, username, password string) *LoginResult {
+	t.Helper()
+	result := LoginWithCreds(t, username, password)
+	if result.TotpRequired {
+		t.Fatal("admin user has 2FA enabled, cannot auto-login for tests")
+	}
+	return result
+}
+
+// LoginWithCreds 走完整登录流程并原样返回结果（含 totp_required 二段式分支），
+// 供 2FA 生命周期等需要拿 provisional_token 的用例使用。
+func LoginWithCreds(t *testing.T, username, password string) *LoginResult {
 	t.Helper()
 	client := NewAPIClient(DefaultBaseURL)
 
@@ -83,10 +95,6 @@ func AuthenticateWithCreds(t *testing.T, username, password string) *LoginResult
 	var loginResult LoginResult
 	loginResp.DecodeData(t, &loginResult)
 
-	if loginResult.TotpRequired {
-		t.Fatal("admin user has 2FA enabled, cannot auto-login for tests")
-	}
-
 	return &loginResult
 }
 
@@ -94,4 +102,17 @@ func GetAuthedClient(t *testing.T) *APIClient {
 	t.Helper()
 	result := Authenticate(t)
 	return NewAPIClient(DefaultBaseURL).WithToken(result.AccessToken)
+}
+
+// DelRedisKey 删除指定 Redis 键。测试用它在受控前提下重置服务器状态
+// （如清空 2FA 失败计数，等价于等待固定窗口过期自愈，避免测试等待 5 分钟）。
+func DelRedisKey(t *testing.T, key string) {
+	t.Helper()
+	rdb := getRedisClient()
+	defer rdb.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := rdb.Del(ctx, key).Err(); err != nil {
+		t.Fatalf("delete redis key %s error: %v", key, err)
+	}
 }

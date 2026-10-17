@@ -9,6 +9,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import TableStats from '@/components/TableStats.vue'
 import request from '@/utils/request'
 import ResponsiveTable from '@/components/ResponsiveTable.vue'
+import ChannelModelTestModal from '@/components/ChannelModelTestModal.vue'
 import { useExport } from '@/composables/useExport'
 import { hasPermission } from '@/utils/permission'
 import { providerTypeOptions, providerTypeName, filterProviderOption } from '@/constants/channel'
@@ -35,8 +36,6 @@ const statusOptions = [
   { label: '全部状态', value: '' },
   { label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }, { label: '测试中', value: 'testing' },
 ]
-const statusTagColor: Record<string, string> = { active: 'green', disabled: 'orangered', testing: 'arcoblue' }
-const statusLabel: Record<string, string> = { active: '启用', disabled: '禁用', testing: '测试中' }
 const breakerTagColor: Record<number, string> = { 0: 'green', 1: 'red', 2: 'orange' }
 const breakerLabel: Record<number, string> = { 0: '正常', 1: '熔断', 2: '半开' }
 
@@ -67,6 +66,15 @@ function openDetail(row: any) {
   router.push({ name: 'AdminChannelDetail', params: { id: row.id } })
 }
 
+// === 渠道模型快捷检测（不进详情页，弹窗内逐模型发起测试） ===
+const showChannelTest = ref(false)
+const testTarget = ref<any>(null)
+
+function openChannelTest(row: any) {
+  testTarget.value = row
+  showChannelTest.value = true
+}
+
 const columns: TableColumnData[] = [
   { title: 'ID', dataIndex: 'id', width: 70 },
   { title: '名称', dataIndex: 'name', width: 140 },
@@ -77,11 +85,7 @@ const columns: TableColumnData[] = [
       return h(Tag, { color: providerTagColor[record.type], size: 'small' }, () => label)
     },
   },
-  { title: 'Base URL', dataIndex: 'base_url', width: 220, ellipsis: true },
-  {
-    title: '状态', dataIndex: 'status', width: 80,
-    render({ record }) { return h(Tag, { color: statusTagColor[record.status], size: 'small' }, () => statusLabel[record.status] || record.status) },
-  },
+  { title: 'Base URL', dataIndex: 'base_url', width: 250, ellipsis: true },
   {
     title: '层级', dataIndex: 'tier', width: 120,
     render({ record }) {
@@ -121,7 +125,7 @@ const columns: TableColumnData[] = [
     },
   },
   {
-    title: '健康度', dataIndex: 'health_score', width: 140,
+    title: '健康度', dataIndex: 'health_score', width: 80,
     render({ record }) {
       if (record.health_score === null || record.health_score === undefined) return h('span', { style: 'color:#94a3b8' }, 'N/A')
       const score = h('span', { style: { color: healthColor(record.health_score), fontWeight: 600 } }, record.health_score.toFixed(0))
@@ -164,15 +168,9 @@ const columns: TableColumnData[] = [
       return h(Tooltip, null, { default: () => trigger, content })
     },
   },
-  {
-    title: 'VIP', dataIndex: 'is_vip', width: 70,
-    render({ record }) {
-      return h(Tag, { color: record.is_vip ? 'gold' : undefined, size: 'small' }, () => record.is_vip ? 'VIP' : '-')
-    },
-  },
-  { title: '创建时间', dataIndex: 'created_at', width: 170 },
-  {
-    title: '操作', dataIndex: 'actions', width: 300, fixed: 'right',
+  { title: '创建时间', dataIndex: 'created_at', width: 170 },  {
+    // 启停按钮文字即状态：显示「禁用」= 当前启用，显示「启用」= 当前禁用/测试中
+    title: '操作', dataIndex: 'actions', width: 260, fixed: 'right',
     render({ record }) {
       const isActive = record.status === 'active'
       const action = isActive ? '禁用' : '启用'
@@ -187,6 +185,15 @@ const columns: TableColumnData[] = [
               status: isActive ? 'normal' : 'success',
             }, () => action))
           : null,
+        h(Button, {
+          size: 'small',
+          onClick: () => openChannelTest(record),
+        }, () => '检测'),
+        h(Button, {
+          size: 'small',
+          type: 'primary',
+          onClick: () => openDetail(record),
+        }, () => '详情'),
         hasPermission('channel:edit')
           ? h(Popconfirm, {
               content: '确定重置该渠道健康度？',
@@ -194,11 +201,11 @@ const columns: TableColumnData[] = [
             }, () => h(Button, {
               size: 'small',
               status: 'warning',
-            }, () => '重置健康度'))
+            }, () => '恢复'))
           : null,
-        h(Button, { size: 'small', type: 'primary', onClick: () => openDetail(record) }, () => '详情'),
         hasPermission('channel:delete')
-          ? h(Popconfirm, { content: '确定删除该渠道？', onOk: () => deleteChannel(record) }, () => h(Button, { size: 'small', status: 'danger' }, () => '删除'))
+          ? h(Popconfirm, { content: '确定删除该渠道？', onOk: () => deleteChannel(record) }, () =>
+              h(Button, { size: 'small', status: 'danger' }, () => '删除'))
           : null,
       ].filter(Boolean)
       return h(Space, { size: 4 }, () => nodes)
@@ -268,10 +275,10 @@ const providerDefaultURLs: Record<number, string> = {
   35: 'https://chatgpt.com',
 }
 
-const form = reactive({ name: '', type: 1, base_url: '', api_key: '', priority: 0, weight: 100, max_concurrency: 100, tier: 'primary', strict_capacity: false, test_model: '', remark: '', status: 'active', is_vip: false, use_proxy: false, sharing_threshold: null as number | null, preemption_threshold: null as number | null, borrowing_cooldown_seconds: null as number | null })
+const form = reactive({ name: '', type: 1, base_url: '', api_key: '', priority: 0, weight: 100, max_concurrency: 100, tier: 'primary', strict_capacity: false, test_model: '', remark: '', status: 'active', use_proxy: false })
 
 function openCreate() {
-  Object.assign(form, { name: '', type: 1, base_url: '', api_key: '', priority: 0, weight: 100, max_concurrency: 100, tier: 'primary', strict_capacity: false, test_model: '', remark: '', status: 'active', is_vip: false, use_proxy: false, sharing_threshold: null, preemption_threshold: null, borrowing_cooldown_seconds: null })
+  Object.assign(form, { name: '', type: 1, base_url: '', api_key: '', priority: 0, weight: 100, max_concurrency: 100, tier: 'primary', strict_capacity: false, test_model: '', remark: '', status: 'active', use_proxy: false })
   showModal.value = true
 }
 
@@ -522,13 +529,14 @@ const { exporting, exportFile } = useExport({
         :columns="columns"
         :data="data"
         :loading="loading"
-        :scroll="{ x: 1400 }"
+        :scroll="{ x: 1300 }"
         :stripe="true"
         row-key="id"
+        :row-click="openDetail"
         card-title-key="name"
         card-subtitle-key="base_url"
-        card-badge-key="status"
-        :card-fields="['type', 'tier', 'health_score', 'breaker_state', 'weight']"
+        card-badge-key="tier"
+        :card-fields="['type', 'health_score', 'breaker_state', 'weight']"
       />
       <div class="table-footer">
         <TableStats :total="pagination.total" />
@@ -609,29 +617,15 @@ const { exporting, exportFile } = useExport({
           </ACol>
         </ARow>
         <AFormItem label="备注"><AInput v-model="form.remark" type="textarea" :auto-size="{ minRows: 2, maxRows: 4 }" placeholder="备注（选填）" /></AFormItem>
-        <!-- VIP 设置 -->
-        <ACollapse :bordered="false" :default-active-key="form.is_vip ? ['vip'] : []">
-          <ACollapseItem header="VIP 设置" key="vip" :header-style="{ fontSize: '13px' }">
-            <ARow :gutter="16">
-              <ACol :span="12">
-                <AFormItem label="VIP 渠道"><ASwitch v-model="form.is_vip" /></AFormItem>
-              </ACol>
-              <ACol v-if="form.is_vip" :span="12">
-                <AFormItem label="共享阈值"><AInputNumber v-model="form.sharing_threshold" :min="0" :max="100" placeholder="共享健康分阈值" class="w-full" /></AFormItem>
-              </ACol>
-            </ARow>
-            <ARow v-if="form.is_vip" :gutter="16">
-              <ACol :span="12">
-                <AFormItem label="抢占阈值"><AInputNumber v-model="form.preemption_threshold" :min="0" :max="100" placeholder="抢占优先级阈值" class="w-full" /></AFormItem>
-              </ACol>
-              <ACol :span="12">
-                <AFormItem label="借用冷却(秒)"><AInputNumber v-model="form.borrowing_cooldown_seconds" :min="0" placeholder="非VIP冷却时间" class="w-full" /></AFormItem>
-              </ACol>
-            </ARow>
-          </ACollapseItem>
-        </ACollapse>
       </AForm>
     </AModal>
+
+    <!-- 渠道模型检测弹窗（行「检测」按钮入口） -->
+    <ChannelModelTestModal
+      v-model:visible="showChannelTest"
+      :channel-id="testTarget?.id"
+      :channel-name="testTarget?.name"
+    />
 
     <!-- OAuth Dialog -->
     <AModal v-model:visible="showOAuthDialog" title="官方渠道 OAuth 授权" :width="560" :footer="false" :mask-closable="false">

@@ -5,6 +5,7 @@ import type { FormInstance } from '@arco-design/web-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import request from '@/utils/request'
 import { useAuthStore } from '@/stores/auth'
+import TwoFactorCard from './twofactor/TwoFactorCard.vue'
 
 const authStore = useAuthStore()
 
@@ -47,7 +48,7 @@ async function handleChangePassword() {
 
 <template>
 	<div>
-		<PageHeader title="个人信息" description="查看账号信息和修改密码" />
+		<PageHeader title="个人信息" description="查看账号信息、修改密码与安全设置" />
 
 		<div class="profile-grid">
 			<div class="profile-card">
@@ -92,6 +93,15 @@ async function handleChangePassword() {
 					</Form>
 				</div>
 			</div>
+
+			<!-- 卡片外壳（.profile-card/__header/__body）由页面渲染：父级 scoped 样式
+			     只作用于子组件的根元素，子组件内部节点拿不到这些规则 -->
+			<div class="profile-card profile-card--full">
+				<div class="profile-card__header">两步验证（TOTP）</div>
+				<div class="profile-card__body">
+					<TwoFactorCard />
+				</div>
+			</div>
 		</div>
 	</div>
 </template>
@@ -125,6 +135,11 @@ async function handleChangePassword() {
 
 .profile-card__body {
 	padding: 20px;
+}
+
+/* 横跨两列的安全设置卡片 */
+.profile-card--full {
+	grid-column: 1 / -1;
 }
 
 .profile-field {

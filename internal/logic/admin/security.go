@@ -31,12 +31,21 @@ func (s *sAdmin) Verify2FA(ctx context.Context, req *v1.Admin2FAVerifyReq) (*v1.
 		return nil, common.NewBusinessError(consts.CodeUnauthorized, "令牌类型不匹配")
 	}
 
+	// 提前提取请求上下文信息：验证码错误的失败路径同样要写登录历史
+	httpReq := g.RequestFromCtx(ctx)
+	ipAddress := httpReq.GetClientIp()
+	ua := httpReq.Header.Get("User-Agent")
+	deviceFP := common.DeviceFingerprint(req.DeviceId, ua)
+
 	// Verify 2FA code
 	valid, err := common.Verify2FACode(ctx, "admin", claims.UserID, req.Code)
 	if err != nil {
 		return nil, err
 	}
 	if !valid {
+		// 审计补全：2FA 步失败此前不入登录历史，造成管理后台登录审计空洞
+		// （失败计数已在 common.Verify2FACode 内完成，此处只补审计记录）
+		_ = common.RecordLoginHistory(ctx, "admin", claims.UserID, 0, "totp", ipAddress, ua, deviceFP, false, "验证码错误")
 		return nil, common.NewBusinessError(consts.CodeTotpInvalid, consts.MsgTotpInvalid)
 	}
 
@@ -60,7 +69,6 @@ func (s *sAdmin) Verify2FA(ctx context.Context, req *v1.Admin2FAVerifyReq) (*v1.
 	}
 	refreshTokenHash := common.HashRefreshToken(refreshToken)
 
-	ipAddress := g.RequestFromCtx(ctx).GetClientIp()
 	deviceInfo := common.ExtractDeviceInfo(ctx)
 
 	// Create session with jti
@@ -86,8 +94,6 @@ func (s *sAdmin) Verify2FA(ctx context.Context, req *v1.Admin2FAVerifyReq) (*v1.
 	}
 
 	// Record login history
-	ua := g.RequestFromCtx(ctx).Header.Get("User-Agent")
-	deviceFP := common.DeviceFingerprint(req.DeviceId, ua)
 	_ = common.RecordLoginHistory(ctx, "admin", user.Id, 0, "totp", ipAddress, ua, deviceFP, true, "")
 
 	res := &v1.Admin2FAVerifyRes{
@@ -100,6 +106,9 @@ func (s *sAdmin) Verify2FA(ctx context.Context, req *v1.Admin2FAVerifyReq) (*v1.
 	res.User.DisplayName = user.DisplayName
 	res.User.Role = user.Role
 	res.Permissions, res.Roles = loadSessionPermissions(ctx, user.Id, user.Role)
+
+	// 会话签发成功，验证码至此才算消耗（校验阶段不消耗，见 common.Verify2FACode）
+	common.ConsumeTOTPCode(ctx, "admin", claims.UserID, req.Code)
 	return res, nil
 }
 

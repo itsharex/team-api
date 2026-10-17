@@ -73,6 +73,10 @@ const form = reactive({
   status: 'active',
   sunset_date: '',
   replacement_model: '',
+  // 模型广场展示位（运营配置）
+  is_recommended: false,
+  is_new: false,
+  display_order: 0,
 })
 
 const fetchingInfo = ref(false)
@@ -217,8 +221,6 @@ const columns: TableColumnData[] = [
       return h(Tag, { color: vendorTagColor[record.vendor] || 'gray', size: 'small' }, () => vendorLabelMap[record.vendor] || record.vendor)
     },
   },
-  { title: '上下文', dataIndex: 'max_context_tokens', width: 100 },
-  { title: '输出上限', dataIndex: 'max_output_tokens', width: 100 },
   {
     title: '定价',
     dataIndex: 'pricing',
@@ -245,19 +247,6 @@ const columns: TableColumnData[] = [
     },
   },
   {
-    title: '弃用信息',
-    dataIndex: 'deprecation',
-    width: 180,
-    ellipsis: true,
-    render({ record }) {
-      if (record.status !== 'deprecated') return null
-      const parts: string[] = []
-      if (record.deprecated_at) parts.push(`弃用于 ${record.deprecated_at}`)
-      if (record.replacement_model) parts.push(`替代: ${record.replacement_model}`)
-      return h('span', { style: 'font-size: 12px; color: var(--color-text-3); line-height: 1.4;' }, parts.join('\n'))
-    },
-  },
-  {
     title: '状态',
     dataIndex: 'status',
     width: 100,
@@ -271,7 +260,6 @@ const columns: TableColumnData[] = [
       return h('span', { style: 'display: inline-flex; gap: 4px; align-items: center;' }, tags)
     },
   },
-
   {
     title: '可用渠道',
     dataIndex: 'channels',
@@ -357,6 +345,9 @@ function openCreate() {
   form.status = 'active'
   form.sunset_date = ''
   form.replacement_model = ''
+  form.is_recommended = false
+  form.is_new = false
+  form.display_order = 0
   showModal.value = true
 }
 
@@ -376,6 +367,9 @@ function openEdit(row: any) {
   form.status = row.status
   form.sunset_date = row.sunset_date || ''
   form.replacement_model = row.replacement_model || ''
+  form.is_recommended = !!row.is_recommended
+  form.is_new = !!row.is_new
+  form.display_order = row.display_order || 0
   showModal.value = true
 }
 
@@ -740,7 +734,7 @@ function resetImport() {
         :columns="columns"
         :data="data"
         :loading="loading"
-        :scroll="{ x: 1600 }"
+        :scroll="{ x: 1500 }"
         :stripe="true"
         row-key="id"
         :row-selection="{ type: 'checkbox', showCheckedAll: true }"
@@ -872,6 +866,24 @@ function resetImport() {
           </AFormItem>
           <AFormItem label="标签">
             <AInputTag v-model="form.tags" placeholder="输入后回车添加标签" allow-clear />
+          </AFormItem>
+        </div>
+        <!-- 第五行：模型广场展示位（运营配置） -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4">
+          <AFormItem label="广场推荐位">
+            <div class="flex items-center gap-2">
+              <ASwitch v-model="form.is_recommended" />
+              <span class="text-xs" style="color: var(--color-text-3);">进入广场「推荐模型」条</span>
+            </div>
+          </AFormItem>
+          <AFormItem label="广场上新位">
+            <div class="flex items-center gap-2">
+              <ASwitch v-model="form.is_new" />
+              <span class="text-xs" style="color: var(--color-text-3);">进入广场「新上线」条</span>
+            </div>
+          </AFormItem>
+          <AFormItem label="推荐排序">
+            <AInputNumber v-model="form.display_order" :min="0" :step="1" placeholder="越小越靠前" class="w-full" />
           </AFormItem>
         </div>
         <!-- 弃用时展示：下线日期 / 替代模型 -->
